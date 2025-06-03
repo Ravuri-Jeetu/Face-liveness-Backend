@@ -1,9 +1,7 @@
 fastapi
 uvicorn
-python-multipart
-opencv-python
-torch
-numpy
-pillow
 requests
 ultralytics
+opencv-python
+python-multipart
+pillow
