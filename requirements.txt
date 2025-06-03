@@ -1,7 +1,4 @@
 fastapi
 uvicorn
-requests
 ultralytics
-opencv-python
-python-multipart
-pillow
+gdown
