@@ -1,55 +1,48 @@
-from fastapi import FastAPI
+import os
+import requests
+from ultralytics import YOLO
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import base64
 import cv2
 import numpy as np
-from ultralytics import YOLO
 
-# Load YOLOv8 model
-model = YOLO('best.pt')  # Replace with your trained model path
+# Google Drive download link using your model's ID
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1sbtPi-0NJM2joeTakOY2kVaN0t60zmKk"
+MODEL_PATH = "best.pt"
 
-# Define FastAPI app
+# Download the model if it doesn't exist
+def download_model():
+    if not os.path.exists(MODEL_PATH):
+        print("Downloading model from Google Drive...")
+        response = requests.get(MODEL_URL, allow_redirects=True)
+        if response.status_code == 200:
+            with open(MODEL_PATH, "wb") as f:
+                f.write(response.content)
+            print("Model downloaded.")
+        else:
+            raise Exception("Failed to download model from Google Drive.")
+
+# Download and load model
+download_model()
+model = YOLO(MODEL_PATH)
+
+# FastAPI app
 app = FastAPI()
 
-# Enable CORS (allow all origins for now; restrict in production)
+# Allow CORS for frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=True,
+    allow_origins=["*"],  # Replace with frontend domain in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Define request model
-class Frame(BaseModel):
-    image_base64: str  # Expecting data:image/jpeg;base64,...
-
-# Prediction endpoint
+# Prediction route
 @app.post("/predict")
-async def predict_liveness(frame: Frame):
-    try:
-        # Decode base64 image
-        if "," in frame.image_base64:
-            _, encoded = frame.image_base64.split(",", 1)
-        else:
-            encoded = frame.image_base64
-
-        img_bytes = base64.b64decode(encoded)
-        np_arr = np.frombuffer(img_bytes, np.uint8)
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-        # Run YOLOv8 inference
-        results = model(image, verbose=False)[0]
-
-        # Extract detected classes
-        detected_classes = results.boxes.cls.cpu().numpy().astype(int)
-
-        # Check for 'real' class (assumed as class 1)
-        if 1 in detected_classes:
-            return {"status": "real"}
-        else:
-            return {"status": "fake"}
-
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+async def predict(file: UploadFile = File(...)):
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    results = model(img)
+    result_class = results[0].names[int(results[0].probs.top1)] if results[0].probs else "unknown"
+    return {"result": result_class}
